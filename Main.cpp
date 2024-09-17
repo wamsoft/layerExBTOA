@@ -2,7 +2,13 @@
 #include <vector>
 using namespace std;
 
-// ƒŒƒCƒ„ƒNƒ‰ƒX‚ğQÆ
+#ifndef WIN32
+typedef unsigned char BYTE;
+typedef tjs_uint16 WORD;
+typedef tjs_uint32 DWORD;
+#endif
+
+// ãƒ¬ã‚¤ãƒ¤ã‚¯ãƒ©ã‚¹ã‚’å‚ç…§
 iTJSDispatch2 *getLayerClass(void)
 {
 	tTJSVariant var;
@@ -11,9 +17,9 @@ iTJSDispatch2 *getLayerClass(void)
 }
 
 //----------------------------------------------
-// ƒŒƒCƒ„ƒCƒ[ƒW‘€ìƒ†[ƒeƒBƒŠƒeƒB
+// ãƒ¬ã‚¤ãƒ¤ã‚¤ãƒ¡ãƒ¼ã‚¸æ“ä½œãƒ¦ãƒ¼ãƒ†ã‚£ãƒªãƒ†ã‚£
 
-// ƒoƒbƒtƒ@QÆ—p‚ÌŒ^
+// ãƒãƒƒãƒ•ã‚¡å‚ç…§ç”¨ã®å‹
 typedef unsigned char       *WrtRefT;
 typedef unsigned char const *ReadRefT;
 
@@ -24,44 +30,44 @@ static tjs_uint32 clipLeftHint, clipTopHint, clipWidthHint, clipHeightHint;
 static tjs_uint32 updateHint;
 
 /**
- * ƒŒƒCƒ„‚ÌƒTƒCƒY‚Æƒoƒbƒtƒ@‚ğæ“¾‚·‚é
+ * ãƒ¬ã‚¤ãƒ¤ã®ã‚µã‚¤ã‚ºã¨ãƒãƒƒãƒ•ã‚¡ã‚’å–å¾—ã™ã‚‹
  */
 static bool
-GetLayerSize(iTJSDispatch2 *lay, long &w, long &h, long &pitch)
+GetLayerSize(iTJSDispatch2 *lay, tjs_int32 &w, tjs_int32 &h, tjs_int32 &pitch)
 {
 	iTJSDispatch2 *layerClass = getLayerClass();
 
-	// ƒŒƒCƒ„ƒCƒ“ƒXƒ^ƒ“ƒXˆÈŠO‚Å‚ÍƒGƒ‰[
+	// ãƒ¬ã‚¤ãƒ¤ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ä»¥å¤–ã§ã¯ã‚¨ãƒ©ãƒ¼
 	if (!lay || TJS_FAILED(lay->IsInstanceOf(0, 0, 0, TJS_W("Layer"), lay))) return false;
 
-	// ƒŒƒCƒ„ƒCƒ[ƒW‚Íİ‚é‚©H
+	// ãƒ¬ã‚¤ãƒ¤ã‚¤ãƒ¡ãƒ¼ã‚¸ã¯åœ¨ã‚‹ã‹ï¼Ÿ
 	tTJSVariant val;
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("hasImage"), &hasImageHint, &val, lay)) || (val.AsInteger() == 0)) return false;
 
-	// ƒŒƒCƒ„ƒTƒCƒY‚ğæ“¾
+	// ãƒ¬ã‚¤ãƒ¤ã‚µã‚¤ã‚ºã‚’å–å¾—
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("imageWidth"), &imageWidthHint, &val, lay))) return false;
-	w = (long)val.AsInteger();
+	w = (tjs_int32)val.AsInteger();
 
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("imageHeight"), &imageHeightHint, &val, lay))) return false;
-	h = (long)val.AsInteger();
+	h = (tjs_int32)val.AsInteger();
 
-	// ƒsƒbƒ`æ“¾
+	// ãƒ”ãƒƒãƒå–å¾—
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferPitch"), &mainImageBufferPitchHint, &val, lay))) return false;
-	pitch = (long)val.AsInteger();
+	pitch = (tjs_int32)val.AsInteger();
 
-	// ³í‚È’l‚©‚Ç‚¤‚©
+	// æ­£å¸¸ãªå€¤ã‹ã©ã†ã‹
 	return (w > 0 && h > 0 && pitch != 0);
 }
 
-// ‘‚«‚İ—p
+// æ›¸ãè¾¼ã¿ç”¨
 static bool
-GetLayerBufferAndSize(iTJSDispatch2 *lay, long &w, long &h, WrtRefT &ptr, long &pitch)
+GetLayerBufferAndSize(iTJSDispatch2 *lay, tjs_int32 &w, tjs_int32 &h, WrtRefT &ptr, tjs_int32 &pitch)
 {
 	iTJSDispatch2 *layerClass = getLayerClass();
 	
 	if (!GetLayerSize(lay, w, h, pitch)) return false;
 
-	// ƒoƒbƒtƒ@æ“¾
+	// ãƒãƒƒãƒ•ã‚¡å–å¾—
 	tTJSVariant val;
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, lay))) return false;
 	ptr = reinterpret_cast<WrtRefT>(val.AsInteger());
@@ -69,47 +75,47 @@ GetLayerBufferAndSize(iTJSDispatch2 *lay, long &w, long &h, WrtRefT &ptr, long &
 }
 
 /**
- * ƒNƒŠƒbƒv—Ìˆæ‚ÌƒTƒCƒY‚Æƒoƒbƒtƒ@‚ğæ“¾‚·‚é
+ * ã‚¯ãƒªãƒƒãƒ—é ˜åŸŸã®ã‚µã‚¤ã‚ºã¨ãƒãƒƒãƒ•ã‚¡ã‚’å–å¾—ã™ã‚‹
  */
 static bool
-GetClipSize(iTJSDispatch2 *lay, long &l, long &t, long &w, long &h, long &pitch)
+GetClipSize(iTJSDispatch2 *lay, tjs_int32 &l, tjs_int32 &t, tjs_int32 &w, tjs_int32 &h, tjs_int32 &pitch)
 {
 	iTJSDispatch2 *layerClass = getLayerClass();
 
-	// ƒŒƒCƒ„ƒCƒ“ƒXƒ^ƒ“ƒXˆÈŠO‚Å‚ÍƒGƒ‰[
+	// ãƒ¬ã‚¤ãƒ¤ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ä»¥å¤–ã§ã¯ã‚¨ãƒ©ãƒ¼
 	if (!lay || TJS_FAILED(lay->IsInstanceOf(0, 0, 0, TJS_W("Layer"), lay))) return false;
 
-	// ƒŒƒCƒ„ƒCƒ[ƒW‚Íİ‚é‚©H
+	// ãƒ¬ã‚¤ãƒ¤ã‚¤ãƒ¡ãƒ¼ã‚¸ã¯åœ¨ã‚‹ã‹ï¼Ÿ
 	tTJSVariant val;
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("hasImage"), &hasImageHint, &val, lay)) || (val.AsInteger() == 0)) return false;
 
-	// ƒNƒŠƒbƒvƒTƒCƒY‚ğæ“¾
+	// ã‚¯ãƒªãƒƒãƒ—ã‚µã‚¤ã‚ºã‚’å–å¾—
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipLeft"), &clipLeftHint, &val, lay))) return false;
-	l = (long)val.AsInteger();
+	l = (tjs_int32)val.AsInteger();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipTop"),  &clipTopHint, &val, lay))) return false;
-	t = (long)val.AsInteger();
+	t = (tjs_int32)val.AsInteger();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipWidth"), &clipWidthHint, &val, lay))) return false;
-	w = (long)val.AsInteger();
+	w = (tjs_int32)val.AsInteger();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipHeight"), &clipHeightHint, &val, lay))) return false;
-	h = (long)val.AsInteger();
+	h = (tjs_int32)val.AsInteger();
 
-	// ƒsƒbƒ`æ“¾
+	// ãƒ”ãƒƒãƒå–å¾—
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferPitch"), &mainImageBufferPitchHint, &val, lay))) return false;
-	pitch = (long)val.AsInteger();
+	pitch = (tjs_int32)val.AsInteger();
 
-	// ³í‚È’l‚©‚Ç‚¤‚©
+	// æ­£å¸¸ãªå€¤ã‹ã©ã†ã‹
 	return (w > 0 && h > 0 && pitch != 0);
 }
 
-// ‘‚«‚İ—p
+// æ›¸ãè¾¼ã¿ç”¨
 static bool
-GetClipBufferAndSize(iTJSDispatch2 *lay, long &l, long &t, long &w, long &h, WrtRefT &ptr, long &pitch)
+GetClipBufferAndSize(iTJSDispatch2 *lay, tjs_int32 &l, tjs_int32 &t, tjs_int32 &w, tjs_int32 &h, WrtRefT &ptr, tjs_int32 &pitch)
 {
 	iTJSDispatch2 *layerClass = getLayerClass();
 
 	if (!GetClipSize(lay, l, t, w, h, pitch)) return false;
 	
-	// ƒoƒbƒtƒ@æ“¾
+	// ãƒãƒƒãƒ•ã‚¡å–å¾—
 	tTJSVariant val;
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, lay))) return false;
 	ptr = reinterpret_cast<WrtRefT>(val.AsInteger());
@@ -123,27 +129,27 @@ GetClipBufferAndSize(iTJSDispatch2 *lay, long &l, long &t, long &w, long &h, Wrt
 
 /**
  * Layer.copyRightBlueToLeftAlpha
- * ƒŒƒCƒ„‰E”¼•ª‚Ì Blue CHANNEL ‚ğ¶”¼•ª‚Ì Alpha CHANNEL ‚É•¡»‚·‚é
+ * ãƒ¬ã‚¤ãƒ¤å³åŠåˆ†ã® Blue CHANNEL ã‚’å·¦åŠåˆ†ã® Alpha CHANNEL ã«è¤‡è£½ã™ã‚‹
  */
 static tjs_error TJS_INTF_METHOD
 copyRightBlueToLeftAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *lay)
 {
-	// ‘‚«‚İæ
+	// æ›¸ãè¾¼ã¿å…ˆ
 	WrtRefT dbuf = 0;
-	long dw, dh, dpitch;
+	tjs_int32 dw, dh, dpitch;
 	if (!GetLayerBufferAndSize(lay, dw, dh, dbuf, dpitch)) {
 		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
 	}
 
-	// ”¼•ª
+	// åŠåˆ†
 	dw /= 2;
-	// ƒRƒs[
+	// ã‚³ãƒ”ãƒ¼
 
 	WrtRefT sbuf = dbuf + dw*4;
 	dbuf += 3;
 	for (int i=0;i<dh;i++) {
-		WrtRefT p = sbuf;   // B—Ìˆæ
-		WrtRefT q = dbuf;   // A—Ìˆæ
+		WrtRefT p = sbuf;   // Bé ˜åŸŸ
+		WrtRefT q = dbuf;   // Aé ˜åŸŸ
 		for (int j=0;j<dw;j++) {
 			*q = *p;
 			p += 4;
@@ -153,33 +159,33 @@ copyRightBlueToLeftAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **p
 		dbuf += dpitch;
 	}
 	ncbPropAccessor layObj(lay);
-	layObj.FuncCall(0, L"update", &updateHint, NULL, 0, 0, dw, dh);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, 0, 0, dw, dh);
 	return TJS_S_OK;
 }
 
 /**
  * Layer.copyBottomBlueToTopAlpha
- * ƒŒƒCƒ„‰E”¼•ª‚Ì Blue CHANNEL ‚ğ¶”¼•ª‚Ì Alpha CHANNEL‚É•¡»‚·‚é
+ * ãƒ¬ã‚¤ãƒ¤å³åŠåˆ†ã® Blue CHANNEL ã‚’å·¦åŠåˆ†ã® Alpha CHANNELã«è¤‡è£½ã™ã‚‹
  */
 static tjs_error TJS_INTF_METHOD
 copyBottomBlueToTopAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *lay)
 {
-	// ‘‚«‚İæ
+	// æ›¸ãè¾¼ã¿å…ˆ
 	WrtRefT dbuf = 0;
-	long dw, dh, dpitch;
+	tjs_int32 dw, dh, dpitch;
 	if (!GetLayerBufferAndSize(lay, dw, dh, dbuf, dpitch)) {
 		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
 	}
 
-	// ”¼•ª
+	// åŠåˆ†
 	dh /= 2;
 
-	// ƒRƒs[
+	// ã‚³ãƒ”ãƒ¼
 	WrtRefT sbuf = dbuf + dh * dpitch;
 	dbuf += 3;
 	for (int i=0;i<dh;i++) {
-		WrtRefT p = sbuf;   // B—Ìˆæ
-		WrtRefT q = dbuf;   // A—Ìˆæ
+		WrtRefT p = sbuf;   // Bé ˜åŸŸ
+		WrtRefT q = dbuf;   // Aé ˜åŸŸ
 		for (int j=0;j<dw;j++) {
 			*q = *p;
 			p += 4;
@@ -189,23 +195,23 @@ copyBottomBlueToTopAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **p
 		dbuf += dpitch;
 	}
 	ncbPropAccessor layObj(lay);
-	layObj.FuncCall(0, L"update", &updateHint, NULL, 0, 0, dw, dh);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, 0, 0, dw, dh);
 	return TJS_S_OK;
 }
 
 static tjs_error TJS_INTF_METHOD
 fillAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *lay)
 {
-	// ‘‚«‚İæ
+	// æ›¸ãè¾¼ã¿å…ˆ
 	WrtRefT dbuf = 0;
-	long l, t, dw, dh, dpitch;
+	tjs_int32 l, t, dw, dh, dpitch;
 	if (!GetClipBufferAndSize(lay, l, t, dw, dh, dbuf, dpitch)) {
 		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
 	}
 	dbuf += 3;
-	// ‘S•” 0xff‚Å‚¤‚ß‚é
+	// å…¨éƒ¨ 0xffã§ã†ã‚ã‚‹
 	for (int i=0;i<dh;i++) {
-		WrtRefT q = dbuf;   // A—Ìˆæ
+		WrtRefT q = dbuf;   // Aé ˜åŸŸ
 		for (int j=0;j<dw;j++) {
 			*q = 0xff;
 			q += 4;
@@ -213,7 +219,7 @@ fillAlpha(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispa
 		dbuf += dpitch;
 	}
 	ncbPropAccessor layObj(lay);
-	layObj.FuncCall(0, L"update", &updateHint, NULL, l, t, dw, dh);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, l, t, dw, dh);
 	return TJS_S_OK;
 }
 
@@ -224,15 +230,15 @@ copyAlphaToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param,
 
 	ReadRefT sbuf = 0;
 	WrtRefT  dbuf = 0;
-	long l, t, w, h, spitch, dpitch, threshold = -1, matched = 1, otherwise = 0;
+	tjs_int32 l, t, w, h, spitch, dpitch, threshold = -1, matched = 1, otherwise = 0;
 	if (TJS_PARAM_EXIST(0)) {
-		threshold = (long)(param[0]->AsInteger());
+		threshold = (tjs_int32)(param[0]->AsInteger());
 	}
 	if (TJS_PARAM_EXIST(1)) {
-		matched = (long)(param[1]->AsInteger());
+		matched = (tjs_int32)(param[1]->AsInteger());
 	}
 	if (TJS_PARAM_EXIST(2)) {
-		otherwise = (long)(param[2]->AsInteger());
+		otherwise = (tjs_int32)(param[2]->AsInteger());
 	}
 
 	if (!GetClipSize(lay, l, t, w, h, spitch)) {
@@ -253,7 +259,7 @@ copyAlphaToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param,
 	}
 	val.Clear();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferPitch"), &provinceImageBufferPitchHint, &val, lay)) ||
-		(dpitch = (long)val.AsInteger()) == 0) {
+		(dpitch = (tjs_int32)val.AsInteger()) == 0) {
 		TVPThrowExceptionMessage(TJS_W("dst has no province pitch."));
 	}
 	dbuf += dpitch * t + l;
@@ -266,11 +272,11 @@ copyAlphaToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param,
 	if (threshold >= 0 && threshold < 256) {
 		bool enmatch = (matched   >= 0 && matched   < 256);
 		bool enother = (otherwise >= 0 && otherwise < 256);
-		if (!enmatch && !enother) return TJS_S_OK; // •ÏX‚È‚µ
+		if (!enmatch && !enother) return TJS_S_OK; // å¤‰æ›´ãªã—
 		mode = (enmatch && enother) ? 1 : enmatch ? 3 : 4;
 	} else if (threshold >= 256) {
 		if (otherwise >= 0 && otherwise < 256) mode = 2;
-		else return TJS_S_OK; // •ÏX‚È‚µ
+		else return TJS_S_OK; // å¤‰æ›´ãªã—
 	}
 
 	for (int y = 0; y < h; y++) {
@@ -297,7 +303,7 @@ copyAlphaToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param,
 		dbuf += dpitch;
 	}
 	ncbPropAccessor layObj(lay);
-	layObj.FuncCall(0, L"update", &updateHint, NULL, l, t, w, h);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, l, t, w, h);
 	return TJS_S_OK;
 }
 
@@ -311,28 +317,28 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 	WrtRefT  dbuf = 0;
 	iTJSDispatch2 *src = 0;
 	tTJSVariant val;
-	long w, h;
-	long dx, dy, dl, dt, diw, dih, dpitch;
-	long sx, sy, siw, sih, spitch;
+	tjs_int32 w, h;
+	tjs_int32 dx, dy, dl, dt, diw, dih, dpitch;
+	tjs_int32 sx, sy, siw, sih, spitch;
 	unsigned char clrval = 0;
 	bool clr = false;
 	if (numparams < 7) return TJS_E_BADPARAMCOUNT;
 
-	dx  = (long)param[0]->AsInteger();
-	dy  = (long)param[1]->AsInteger();
+	dx  = (tjs_int32)param[0]->AsInteger();
+	dy  = (tjs_int32)param[1]->AsInteger();
 	src =       param[2]->AsObjectNoAddRef();
-	sx  = (long)param[3]->AsInteger();
-	sy  = (long)param[4]->AsInteger();
-	w   = (long)param[5]->AsInteger();
-	h   = (long)param[6]->AsInteger();
+	sx  = (tjs_int32)param[3]->AsInteger();
+	sy  = (tjs_int32)param[4]->AsInteger();
+	w   = (tjs_int32)param[5]->AsInteger();
+	h   = (tjs_int32)param[6]->AsInteger();
 	if (numparams >= 8 && param[7]->Type() != tvtVoid) {
-		long n = (long)param[7]->AsInteger();
+		tjs_int32 n = (tjs_int32)param[7]->AsInteger();
 		clr = (n >= 0 && n < 256);
 		clrval = (unsigned char)(n & 255);
 	}
 	if (w <= 0|| h <= 0) return TJS_E_INVALIDPARAM;
 
-	// •`‰ææƒNƒŠƒbƒsƒ“ƒO—Ìˆæ
+	// æç”»å…ˆã‚¯ãƒªãƒƒãƒ”ãƒ³ã‚°é ˜åŸŸ
 	if (!GetClipSize(dst, dl, dt, diw, dih, dpitch)) {
 		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
 	}
@@ -340,7 +346,7 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 		TVPThrowExceptionMessage(TJS_W("src must be Layer."));
 	}
 
-	// ƒoƒbƒtƒ@æ“¾
+	// ãƒãƒƒãƒ•ã‚¡å–å¾—
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBuffer"), &mainImageBufferHint, &val, src))) return false;
 	sbuf = reinterpret_cast<ReadRefT>(val.AsInteger());
 
@@ -351,40 +357,40 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 
 	dbuf += dpitch * dt + dl * 4;
 
-	// •`‰æ—Ìˆæ‚ÌƒNƒŠƒbƒsƒ“ƒO‘Î‰
+	// æç”»é ˜åŸŸã®ã‚¯ãƒªãƒƒãƒ”ãƒ³ã‚°å¯¾å¿œ
 	dx -= dl;
 	dy -= dt;
 
-	// ƒNƒŠƒbƒsƒ“ƒO
+	// ã‚¯ãƒªãƒƒãƒ”ãƒ³ã‚°
 
-	// src‚ª”ÍˆÍŠO
+	// srcãŒç¯„å›²å¤–
 	if (sx+w <= 0   || sy+h <= 0    ||
 		sx   >= siw || sy   >= sih) goto none;
 
-	// src‚Ì•‰•ûŒü‚ÌƒJƒbƒg
+	// srcã®è² æ–¹å‘ã®ã‚«ãƒƒãƒˆ
 	if (sx < 0) { w += sx; dx -= sx; sx = 0; }
 	if (sy < 0) { h += sy; dy -= sy; sy = 0; }
 
-	// src‚Ì³•ûŒü‚ÌƒJƒbƒg
-	long cut;
+	// srcã®æ­£æ–¹å‘ã®ã‚«ãƒƒãƒˆ
+	tjs_int32 cut;
 	if ((cut = sx + w - siw) > 0) w -= cut;
 	if ((cut = sy + h - sih) > 0) h -= cut;
 
-	// dst‚ª”ÍˆÍŠO
+	// dstãŒç¯„å›²å¤–
 	if (dx+w <= 0   || dy+h <= 0    ||
 		dx   >= diw || dy   >= dih) goto none;
 
-	// dst‚Ì•‰•ûŒü‚ÌƒJƒbƒg
+	// dstã®è² æ–¹å‘ã®ã‚«ãƒƒãƒˆ
 	if (dx < 0) { w += dx; sx -= dx; dx = 0; }
 	if (dy < 0) { h += dy; sy -= dy; dy = 0; }
 
-	// dst‚Ì³•ûŒü‚ÌƒJƒbƒg
+	// dstã®æ­£æ–¹å‘ã®ã‚«ãƒƒãƒˆ
 	if ((cut = dx + w - diw) > 0) w -= cut;
 	if ((cut = dy + h - dih) > 0) h -= cut;
 
 	if (w <= 0 || h <= 0) goto none;
 
-	long x, y;
+	tjs_int32 x, y;
 	WrtRefT  p;
 	ReadRefT q;
 	if (clr) {
@@ -397,25 +403,25 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 		p = dbuf + (y + dy) * dpitch + 3 + (dx*4);
 		q = sbuf + (y + sy) * spitch + 3 + (sx*4);
 		for (x = 0; x < w; x++, p+=4, q+=4) {
-			unsigned long n = (unsigned long)(*p) * (unsigned long)(*q);
+			tjs_uint32 n = (tjs_uint32)(*p) * (tjs_uint32)(*q);
 			*p = (unsigned char)((n + (n >> 7)) >> 8);
 		}
 		if (clr) for (x = dx+w; x < diw; x++, p+=4) *p = clrval;
 	}
 	if (clr) {
-		layObj.FuncCall(0, L"update", &updateHint, NULL, dl, dt, diw, dih);
+		layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, dl, dt, diw, dih);
 	} else {
-		layObj.FuncCall(0, L"update", &updateHint, NULL, dl+dx, dt+dy, w, h);
+		layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, dl+dx, dt+dy, w, h);
 	}
 	return TJS_S_OK;
 none:
-	// —Ìˆæ”ÍˆÍŠO‚Å‰‰Z‚ªs‚í‚ê‚È‚¢ê‡
+	// é ˜åŸŸç¯„å›²å¤–ã§æ¼”ç®—ãŒè¡Œã‚ã‚Œãªã„å ´åˆ
 	if (clr) {
-		for (long y = 0; y < dih; y++) {
+		for (tjs_int32 y = 0; y < dih; y++) {
 			WrtRefT  p = dbuf + y * dpitch + 3;
-			for (long x = 0; x < diw; x++, p+=4) *p = clrval;
+			for (tjs_int32 x = 0; x < diw; x++, p+=4) *p = clrval;
 		}
-		layObj.FuncCall(0, L"update", &updateHint, NULL, dl, dt, diw, dih);
+		layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, dl, dt, diw, dih);
 	}
 	return TJS_S_OK;
 }
@@ -430,15 +436,15 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	unsigned char index = (int)*param[0];
 	DWORD color = (int)*param[1];
 
-	// ‘‚«‚İæ
+	// æ›¸ãè¾¼ã¿å…ˆ
 	WrtRefT dbuf = 0;
-	long l, t, dw, dh, dpitch;
+	tjs_int32 l, t, dw, dh, dpitch;
 	if (!GetClipBufferAndSize(lay, l, t, dw, dh, dbuf, dpitch)) {
 		TVPThrowExceptionMessage(TJS_W("must be Layer."));
 	}
 
 	ReadRefT sbuf = 0;
-	long spitch;
+	tjs_int32 spitch;
 	{
 		tTJSVariant val;
 		if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBuffer"), &provinceImageBufferHint, &val, lay)) ||
@@ -446,7 +452,7 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 			TVPThrowExceptionMessage(TJS_W("no province image."));
 		}
 		if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferPitch"), &provinceImageBufferPitchHint, &val, lay)) ||
-			(spitch = (long)val.AsInteger()) == 0) {
+			(spitch = (tjs_int32)val.AsInteger()) == 0) {
 			TVPThrowExceptionMessage(TJS_W("no province pitch."));
 		}
 	}
@@ -467,7 +473,7 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 		dbuf += dpitch;
 	}
 	ncbPropAccessor layObj(lay);
-	layObj.FuncCall(0, L"update", &updateHint, NULL, l, t, dw, dh);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, l, t, dw, dh);
 	return TJS_S_OK;
 }
 
