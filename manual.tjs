@@ -44,9 +44,30 @@ class Layer {
 	function clipAlphaRect(dleft, dtop, src, sleft, stop, swidth, sheight, clear);
 
 	/**
+	 * レイヤにsrcを重ねる（ただしsrc の Alpha CHANNEL < 閾値は除く） / operateRectのomAlphaがSSE使用時にで正しい値にならないケースが発生するため
+	 * @param dleft   左端位置
+	 * @param dtop    上端位置
+	 * @param src     乗算用のαを持つソース画像
+	 * @param sleft   ソースの左端位置
+	 * @param stop    ソースの上端位置
+	 * @param swidth  ソースの横幅
+	 * @param sheight ソースの縦幅
+	 * @param threshold 閾値
+	 */
+	function overwrapRect(dleft, dtop, src, sleft, stop, swidth, sheight, threshold=1);
+
+	/**
 	 * 領域画像が指定した値の場所を指定した色で塗りつぶす
-	 * @param index 領域画像のインデックス値 (0〜255)
+	 * @param index 領域画像のインデックス値 (0～255)
 	 * @param color 塗りつぶす色 (0xAARRGGBB)
 	 */
 	function fillByProvince(index, color);
+
+	/**
+	 * 特定カラーにマッチするピクセルを領域画像の指定インデックスで塗りつぶす
+	 * @param color 塗りつぶし対象カラー色 (0xRRGGBB)
+	 * @param index 領域画像のインデックス値 (0～255)
+	 * @param threshold アルファ閾値(0-255, 指定値以上でマッチ)
+	 */
+	function fillToProvince(color, index, threshold=64);
 };

@@ -7,6 +7,7 @@ typedef unsigned char BYTE;
 typedef tjs_uint16 WORD;
 typedef tjs_uint32 DWORD;
 #endif
+#define ltAddAlpha 12
 
 // レイヤクラスを参照
 iTJSDispatch2 *getLayerClass(void)
@@ -22,12 +23,14 @@ iTJSDispatch2 *getLayerClass(void)
 // バッファ参照用の型
 typedef unsigned char       *WrtRefT;
 typedef unsigned char const *ReadRefT;
+typedef DWORD                PixelT;
 
 static tjs_uint32 hasImageHint, imageWidthHint, imageHeightHint;
 static tjs_uint32 mainImageBufferHint, mainImageBufferPitchHint, mainImageBufferForWriteHint;
 static tjs_uint32 provinceImageBufferHint, provinceImageBufferPitchHint, provinceImageBufferForWriteHint;
 static tjs_uint32 clipLeftHint, clipTopHint, clipWidthHint, clipHeightHint;
 static tjs_uint32 updateHint;
+static tjs_uint32 typeHint;
 
 /**
  * レイヤのサイズとバッファを取得する
@@ -307,21 +310,93 @@ copyAlphaToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param,
 	return TJS_S_OK;
 }
 
+static inline PixelT ClipAddAlpha(PixelT const pixel, PixelT alpha) {
+	const PixelT mask = 0xFF;
+	if (!((~alpha) & mask)) return pixel; // alpha == 255
+	if (!(  alpha  & mask)) return 0;     // alpha == 0
+
+	const PixelT col_a = ((pixel >> 24) & mask) * alpha;
+	const PixelT col_r = ((pixel >> 16) & mask) * alpha;
+	const PixelT col_g = ((pixel >>  8) & mask) * alpha;
+	const PixelT col_b = ((pixel      ) & mask) * alpha;
+	return ( (((col_a + (col_a >> 7)) >> 8) << 24) |
+			 (((col_r + (col_r >> 7)) >> 8) << 16) |
+			 (((col_g + (col_g >> 7)) >> 8) <<  8) |
+			 (((col_b + (col_b >> 7)) >> 8)      ) );
+}
+
+static inline bool CalcClipArea(
+	long &dx, long &dy, const long diw, const long dih,
+	long &sx, long &sy, const long siw, const long sih,
+	long &w, long &h)
+{
+	// srcが範囲外
+	if (sx+w <= 0   || sy+h <= 0    ||
+		sx   >= siw || sy   >= sih) return true;
+
+	// srcの負方向のカット
+	if (sx < 0) { w += sx; dx -= sx; sx = 0; }
+	if (sy < 0) { h += sy; dy -= sy; sy = 0; }
+
+	// srcの正方向のカット
+	long cut;
+	if ((cut = sx + w - siw) > 0) w -= cut;
+	if ((cut = sy + h - sih) > 0) h -= cut;
+
+	// dstが範囲外
+	if (dx+w <= 0   || dy+h <= 0    ||
+		dx   >= diw || dy   >= dih) return true;
+
+	// dstの負方向のカット
+	if (dx < 0) { w += dx; sx -= dx; dx = 0; }
+	if (dy < 0) { h += dy; sy -= dy; dy = 0; }
+
+	// dstの正方向のカット
+	if ((cut = dx + w - diw) > 0) w -= cut;
+	if ((cut = dy + h - dih) > 0) h -= cut;
+
+	return (w <= 0 || h <= 0);
+}
+static inline iTJSDispatch2 *GetSrcDstLayerInfo(
+	iTJSDispatch2 *src, long &siw, long &sih, long &spitch, ReadRefT &sbuf,
+	iTJSDispatch2 *dst, long &dl, long &dt, long &diw, long &dih, long &dpitch, WrtRefT &dbuf)
+{
+	iTJSDispatch2 *layerClass = getLayerClass();
+	tTJSVariant val;
+
+	// 描画先クリッピング領域
+	if (!GetClipSize(dst, dl, dt, diw, dih, dpitch)) {
+		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
+	}
+	if (!GetLayerSize(src, siw, sih, spitch)) {
+		TVPThrowExceptionMessage(TJS_W("src must be Layer."));
+	}
+
+	// バッファ取得
+	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBuffer"), &mainImageBufferHint, &val, src))) sbuf = 0;
+	else sbuf = reinterpret_cast<ReadRefT>(val.AsInteger());
+
+	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, dst))) dbuf = 0;
+	else dbuf = reinterpret_cast<WrtRefT>(val.AsInteger());
+
+	if (!sbuf || !dbuf) TVPThrowExceptionMessage(TJS_W("Layer has no images."));
+
+	return layerClass;
+}
+
 static tjs_error TJS_INTF_METHOD
 clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *dst)
 {
-	iTJSDispatch2 *layerClass = getLayerClass();
 	ncbPropAccessor layObj(dst);
 
 	ReadRefT sbuf = 0;
 	WrtRefT  dbuf = 0;
 	iTJSDispatch2 *src = 0;
-	tTJSVariant val;
-	tjs_int32 w, h;
-	tjs_int32 dx, dy, dl, dt, diw, dih, dpitch;
-	tjs_int32 sx, sy, siw, sih, spitch;
+	long w, h;
+	long dx, dy, dl, dt, diw, dih, dpitch;
+	long sx, sy, siw, sih, spitch;
 	unsigned char clrval = 0;
-	bool clr = false;
+	bool clr = false, addalpha = false;
 	if (numparams < 7) return TJS_E_BADPARAMCOUNT;
 
 	dx  = (tjs_int32)param[0]->AsInteger();
@@ -338,22 +413,13 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 	}
 	if (w <= 0|| h <= 0) return TJS_E_INVALIDPARAM;
 
-	// 描画先クリッピング領域
-	if (!GetClipSize(dst, dl, dt, diw, dih, dpitch)) {
-		TVPThrowExceptionMessage(TJS_W("dest must be Layer."));
+	iTJSDispatch2 *layerClass = GetSrcDstLayerInfo(src, siw,sih,spitch,sbuf,
+												   dst, dl,dt,diw,dih,dpitch,dbuf);
+	{
+		tTJSVariant val;
+		if (TJS_FAILED(layerClass->PropGet(0, TJS_W("type"), &typeHint, &val, dst))) return false;
+		addalpha = val.AsInteger() == ltAddAlpha;
 	}
-	if (!GetLayerSize(src, siw, sih, spitch)) {
-		TVPThrowExceptionMessage(TJS_W("src must be Layer."));
-	}
-
-	// バッファ取得
-	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBuffer"), &mainImageBufferHint, &val, src))) return false;
-	sbuf = reinterpret_cast<ReadRefT>(val.AsInteger());
-
-	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, dst))) return false;
-	dbuf = reinterpret_cast<WrtRefT>(val.AsInteger());
-	
-	if (!sbuf || !dbuf) TVPThrowExceptionMessage(TJS_W("Layer has no images."));
 
 	dbuf += dpitch * dt + dl * 4;
 
@@ -362,52 +428,68 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 	dy -= dt;
 
 	// クリッピング
-
-	// srcが範囲外
-	if (sx+w <= 0   || sy+h <= 0    ||
-		sx   >= siw || sy   >= sih) goto none;
-
-	// srcの負方向のカット
-	if (sx < 0) { w += sx; dx -= sx; sx = 0; }
-	if (sy < 0) { h += sy; dy -= sy; sy = 0; }
-
-	// srcの正方向のカット
-	tjs_int32 cut;
-	if ((cut = sx + w - siw) > 0) w -= cut;
-	if ((cut = sy + h - sih) > 0) h -= cut;
-
-	// dstが範囲外
-	if (dx+w <= 0   || dy+h <= 0    ||
-		dx   >= diw || dy   >= dih) goto none;
-
-	// dstの負方向のカット
-	if (dx < 0) { w += dx; sx -= dx; dx = 0; }
-	if (dy < 0) { h += dy; sy -= dy; dy = 0; }
-
-	// dstの正方向のカット
-	if ((cut = dx + w - diw) > 0) w -= cut;
-	if ((cut = dy + h - dih) > 0) h -= cut;
-
-	if (w <= 0 || h <= 0) goto none;
+	if (CalcClipArea(dx,dy,diw,dih, sx,sy,siw,sih, w,h)) goto none;
 
 	tjs_int32 x, y;
 	WrtRefT  p;
 	ReadRefT q;
-	if (clr) {
-		for (y = 0;    y < dy;  y++) for ((x=0, p=dbuf+y*dpitch+3); x < diw; x++, p+=4) *p = clrval;
-		for (y = dy+h; y < dih; y++) for ((x=0, p=dbuf+y*dpitch+3); x < diw; x++, p+=4) *p = clrval;
-	}
-	for (y = 0; y < h; y++) {
-		if (clr) for ((x=0, p=dbuf+(y+dy)*dpitch+3); x < dx; x++, p+=4) *p = clrval;
 
-		p = dbuf + (y + dy) * dpitch + 3 + (dx*4);
-		q = sbuf + (y + sy) * spitch + 3 + (sx*4);
-		for (x = 0; x < w; x++, p+=4, q+=4) {
-			tjs_uint32 n = (tjs_uint32)(*p) * (tjs_uint32)(*q);
-			*p = (unsigned char)((n + (n >> 7)) >> 8);
+	if (!addalpha) {
+		if (clr) {
+			for (y = 0;    y < dy;  y++) for ((x=0, p=dbuf+y*dpitch+3); x < diw; x++, p+=4) *p = clrval;
+			for (y = dy+h; y < dih; y++) for ((x=0, p=dbuf+y*dpitch+3); x < diw; x++, p+=4) *p = clrval;
 		}
-		if (clr) for (x = dx+w; x < diw; x++, p+=4) *p = clrval;
+		for (y = 0; y < h; y++) {
+			if (clr) for ((x=0, p=dbuf+(y+dy)*dpitch+3); x < dx; x++, p+=4) *p = clrval;
+
+			p = dbuf + (y + dy) * dpitch + 3 + (dx*4);
+			q = sbuf + (y + sy) * spitch + 3 + (sx*4);
+			for (x = 0; x < w; x++, p+=4, q+=4) {
+				unsigned long n = (unsigned long)(*p) * (unsigned long)(*q);
+				*p = (unsigned char)((n + (n >> 7)) >> 8);
+			}
+			if (clr) for (x = dx+w; x < diw; x++, p+=4) *p = clrval;
+		}
+	} else {
+		// for ltAddAlpha methods
+		PixelT *pp;
+		if (clr && clrval < 255) {
+			if (!clrval) {
+				for (y = 0;    y < dy;  y++) for ((x=0, pp=(PixelT*)(dbuf+y*dpitch)); x < diw; x++) *pp++ = 0;
+				for (y = dy+h; y < dih; y++) for ((x=0, pp=(PixelT*)(dbuf+y*dpitch)); x < diw; x++) *pp++ = 0;
+
+				for (y = 0; y < h; y++) {
+					for ((x=0, pp=(PixelT*)(dbuf+(y+dy)*dpitch)); x < dx; x++) *pp++ = 0;
+
+					pp = (PixelT*)(dbuf + (y + dy) * dpitch +    (dx*4));
+					q  =           sbuf + (y + sy) * spitch + 3 + (sx*4);
+					for (x = 0;    x < w;   x++, q+=4) *pp++ = ClipAddAlpha(*pp, (PixelT)*q);
+					for (x = dx+w; x < diw; x++      ) *pp++ = 0;
+				}
+			} else {
+				PixelT cval = (PixelT)clrval;
+
+				for (y = 0;    y < dy;  y++) for ((x=0, pp=(PixelT*)(dbuf+y*dpitch)); x < diw; x++) *pp++ = ClipAddAlpha(*pp, cval);
+				for (y = dy+h; y < dih; y++) for ((x=0, pp=(PixelT*)(dbuf+y*dpitch)); x < diw; x++) *pp++ = ClipAddAlpha(*pp, cval);
+
+				for (y = 0; y < h; y++) {
+					for ((x=0, pp=(PixelT*)(dbuf+(y+dy)*dpitch)); x < dx; x++) *pp++ = ClipAddAlpha(*pp, cval);
+
+					pp = (PixelT*)(dbuf + (y + dy) * dpitch +     (dx*4));
+					q  =           sbuf + (y + sy) * spitch + 3 + (sx*4);
+					for (x = 0;    x < w;   x++, q+=4) *pp++ = ClipAddAlpha(*pp, (PixelT)*q);
+					for (x = dx+w; x < diw; x++      ) *pp++ = ClipAddAlpha(*pp, cval);
+				}
+			}
+		} else {
+			for (y = 0; y < h; y++) {
+				pp = (PixelT*)(dbuf + (y + dy) * dpitch +     (dx*4));
+				q  =           sbuf + (y + sy) * spitch + 3 + (sx*4);
+				for (x = 0;    x < w;   x++, q+=4) *pp++ = ClipAddAlpha(*pp, (PixelT)*q);
+			}
+		}
 	}
+	
 	if (clr) {
 		layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, dl, dt, diw, dih);
 	} else {
@@ -426,6 +508,57 @@ none:
 	return TJS_S_OK;
 }
 
+static tjs_error TJS_INTF_METHOD
+overwrapRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *dst)
+{
+	iTJSDispatch2 *layerClass = getLayerClass();
+	ncbPropAccessor layObj(dst);
+
+	ReadRefT sbuf = 0;
+	WrtRefT  dbuf = 0;
+	iTJSDispatch2 *src = 0;
+	tTJSVariant val;
+	long w, h;
+	long dx, dy, dl, dt, diw, dih, dpitch;
+	long sx, sy, siw, sih, spitch;
+	unsigned char threshold = 1;
+	if (numparams < 7) return TJS_E_BADPARAMCOUNT;
+
+	dx  = (long)param[0]->AsInteger();
+	dy  = (long)param[1]->AsInteger();
+	src =       param[2]->AsObjectNoAddRef();
+	sx  = (long)param[3]->AsInteger();
+	sy  = (long)param[4]->AsInteger();
+	w   = (long)param[5]->AsInteger();
+	h   = (long)param[6]->AsInteger();
+	if (numparams >= 8 && param[7]->Type() != tvtVoid) {
+		long n = (long)param[7]->AsInteger();
+		if (n >= 0 && n < 256) threshold = (unsigned char)(n);
+	}
+	if (w <= 0|| h <= 0) return TJS_E_INVALIDPARAM;
+
+	GetSrcDstLayerInfo(src, siw,sih,spitch,sbuf,
+					   dst, dl,dt,diw,dih,dpitch,dbuf);
+
+	dbuf += dpitch * dt + dl * 4;
+
+	// 描画領域のクリッピング対応
+	dx -= dl;
+	dy -= dt;
+
+	// クリッピング
+	if (CalcClipArea(dx,dy,diw,dih, sx,sy,siw,sih, w,h)) return TJS_S_OK;
+
+	for (long y = 0; y < h; y++) {
+		WrtRefT  p = dbuf + (y + dy) * dpitch + (dx*4);
+		ReadRefT q = sbuf + (y + sy) * spitch + (sx*4);
+		for (long x = 0; x < w; x++, p+=4, q+=4) {
+			if (q[3] >= threshold) *(reinterpret_cast<PixelT*>(p)) = *(reinterpret_cast<const PixelT*>(q));
+		}
+	}
+	return TJS_S_OK;
+}
+
 
 static tjs_error TJS_INTF_METHOD
 fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *lay)
@@ -434,7 +567,7 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	
 	if (numparams < 2) return TJS_E_BADPARAMCOUNT;
 	unsigned char index = (int)*param[0];
-	DWORD color = (int)*param[1];
+	PixelT color = (int)*param[1];
 
 	// 書き込み先
 	WrtRefT dbuf = 0;
@@ -460,11 +593,10 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	
 	for (int y = 0; y < dh; y++) {
 		ReadRefT q = sbuf;
-		DWORD *p = (DWORD*)dbuf;
-		ttstr s;
+		PixelT *p = (PixelT*)dbuf;
 		for (int x = 0; x < dw; x++) {
 			if (*q == index) {
-				*(DWORD*)p = color;
+				*(PixelT*)p = color;
 			}
 			q++;
 			p++;
@@ -477,10 +609,93 @@ fillByProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	return TJS_S_OK;
 }
 
+static tjs_error TJS_INTF_METHOD
+fillToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *lay)
+{
+	iTJSDispatch2 *layerClass = getLayerClass();
+	
+	if (numparams < 2) return TJS_E_BADPARAMCOUNT;
+	long rcolor = ((int)*param[0]);
+	PixelT color = rcolor & 0xFFFFFF;
+	bool allmatch = rcolor < 0;
+	unsigned char index = (int)*param[1];
+	long threshold = 64;
+	if (TJS_PARAM_EXIST(2)) {
+		threshold = (long)(param[2]->AsInteger());
+	}
+
+	ReadRefT sbuf = 0;
+	long l, t, dw, dh, spitch;
+	if (!GetClipSize(lay, l, t, dw, dh, spitch)) {
+		TVPThrowExceptionMessage(TJS_W("src must be Layer."));
+	}
+
+	tTJSVariant val;
+	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBuffer"), &mainImageBufferHint, &val, lay)) ||
+		(sbuf = reinterpret_cast<ReadRefT>(val.AsInteger())) == NULL) {
+		TVPThrowExceptionMessage(TJS_W("src has no image."));
+	}
+	sbuf += spitch * t + l * 4;
+
+	WrtRefT dbuf = 0;
+	long dpitch;
+	val.Clear();
+	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferForWrite"), &provinceImageBufferForWriteHint, &val, lay)) ||
+		(dbuf = reinterpret_cast<WrtRefT>(val.AsInteger())) == NULL) {
+		TVPThrowExceptionMessage(TJS_W("dst has no province image."));
+	}
+	val.Clear();
+	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferPitch"), &provinceImageBufferPitchHint, &val, lay)) ||
+		(dpitch = (long)val.AsInteger()) == 0) {
+		TVPThrowExceptionMessage(TJS_W("dst has no province pitch."));
+	}
+	dbuf += dpitch * t + l;
+
+	int minx = -1, miny = -1, maxx = -1, maxy = -1;
+	for (int y = 0; y < dh; y++) {
+		const PixelT *q = (const PixelT*)sbuf;
+		WrtRefT p = dbuf;
+		for (int x = 0; x < dw; x++) {
+			if ((allmatch || ((*q & 0xFFFFFF) == color)) && ((long)(*q >> 24)) >= threshold) {
+				*p = index;
+				if (minx < 0 || minx > x) minx = x;
+				if (miny < 0 || miny > y) miny = y;
+				if (maxx < 0 || maxx < x) maxx = x;
+				if (maxy < 0 || maxy < y) maxy = y;
+			}
+			q++;
+			p++;
+		}
+		sbuf += spitch;
+		dbuf += dpitch;
+	}
+	if (result) {
+		result->Clear();
+		if (minx >= 0) {
+			iTJSDispatch2 *arr = TJSCreateArrayObject();
+			if (arr) {
+				tTJSVariant num;
+				num = (minx + l);            arr->PropSetByNum(TJS_MEMBERENSURE, 0, &num, arr);
+				num = (miny + t);            arr->PropSetByNum(TJS_MEMBERENSURE, 1, &num, arr);
+				num = (maxx + l - minx + 1); arr->PropSetByNum(TJS_MEMBERENSURE, 2, &num, arr);
+				num = (maxy + t - miny + 1); arr->PropSetByNum(TJS_MEMBERENSURE, 3, &num, arr);
+				tTJSVariant v(arr, arr);
+				arr->Release();
+				*result = v;
+			}
+		}
+	}
+	ncbPropAccessor layObj(lay);
+	layObj.FuncCall(0, TJS_W("update"), &updateHint, NULL, l, t, dw, dh);
+	return TJS_S_OK;
+}
+
 NCB_ATTACH_FUNCTION(copyRightBlueToLeftAlpha, Layer, copyRightBlueToLeftAlpha);
 NCB_ATTACH_FUNCTION(copyBottomBlueToTopAlpha, Layer, copyBottomBlueToTopAlpha);
 NCB_ATTACH_FUNCTION(fillAlpha, Layer, fillAlpha);
 
 NCB_ATTACH_FUNCTION(copyAlphaToProvince, Layer, copyAlphaToProvince);
 NCB_ATTACH_FUNCTION(clipAlphaRect, Layer, clipAlphaRect);
+NCB_ATTACH_FUNCTION(overwrapRect, Layer, overwrapRect);
 NCB_ATTACH_FUNCTION(fillByProvince, Layer, fillByProvince);
+NCB_ATTACH_FUNCTION(fillToProvince, Layer, fillToProvince);
