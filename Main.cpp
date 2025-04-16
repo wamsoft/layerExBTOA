@@ -326,9 +326,9 @@ static inline PixelT ClipAddAlpha(PixelT const pixel, PixelT alpha) {
 }
 
 static inline bool CalcClipArea(
-	long &dx, long &dy, const long diw, const long dih,
-	long &sx, long &sy, const long siw, const long sih,
-	long &w, long &h)
+	tjs_int32 &dx, tjs_int32 &dy, const tjs_int32 diw, const tjs_int32 dih,
+	tjs_int32 &sx, tjs_int32 &sy, const tjs_int32 siw, const tjs_int32 sih,
+	tjs_int32 &w, tjs_int32 &h)
 {
 	// srcが範囲外
 	if (sx+w <= 0   || sy+h <= 0    ||
@@ -339,7 +339,7 @@ static inline bool CalcClipArea(
 	if (sy < 0) { h += sy; dy -= sy; sy = 0; }
 
 	// srcの正方向のカット
-	long cut;
+	tjs_int32 cut;
 	if ((cut = sx + w - siw) > 0) w -= cut;
 	if ((cut = sy + h - sih) > 0) h -= cut;
 
@@ -358,8 +358,8 @@ static inline bool CalcClipArea(
 	return (w <= 0 || h <= 0);
 }
 static inline iTJSDispatch2 *GetSrcDstLayerInfo(
-	iTJSDispatch2 *src, long &siw, long &sih, long &spitch, ReadRefT &sbuf,
-	iTJSDispatch2 *dst, long &dl, long &dt, long &diw, long &dih, long &dpitch, WrtRefT &dbuf)
+	iTJSDispatch2 *src, tjs_int32 &siw, tjs_int32 &sih, tjs_int32 &spitch, ReadRefT &sbuf,
+	iTJSDispatch2 *dst, tjs_int32 &dl, tjs_int32 &dt, tjs_int32 &diw, tjs_int32 &dih, tjs_int32 &dpitch, WrtRefT &dbuf)
 {
 	iTJSDispatch2 *layerClass = getLayerClass();
 	tTJSVariant val;
@@ -392,9 +392,9 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 	ReadRefT sbuf = 0;
 	WrtRefT  dbuf = 0;
 	iTJSDispatch2 *src = 0;
-	long w, h;
-	long dx, dy, dl, dt, diw, dih, dpitch;
-	long sx, sy, siw, sih, spitch;
+	tjs_int32 w, h;
+	tjs_int32 dx, dy, dl, dt, diw, dih, dpitch;
+	tjs_int32 sx, sy, siw, sih, spitch;
 	unsigned char clrval = 0;
 	bool clr = false, addalpha = false;
 	if (numparams < 7) return TJS_E_BADPARAMCOUNT;
@@ -445,7 +445,7 @@ clipAlphaRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSD
 			p = dbuf + (y + dy) * dpitch + 3 + (dx*4);
 			q = sbuf + (y + sy) * spitch + 3 + (sx*4);
 			for (x = 0; x < w; x++, p+=4, q+=4) {
-				unsigned long n = (unsigned long)(*p) * (unsigned long)(*q);
+				tjs_uint32 n = (tjs_uint32)(*p) * (tjs_uint32)(*q);
 				*p = (unsigned char)((n + (n >> 7)) >> 8);
 			}
 			if (clr) for (x = dx+w; x < diw; x++, p+=4) *p = clrval;
@@ -518,21 +518,21 @@ overwrapRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDi
 	WrtRefT  dbuf = 0;
 	iTJSDispatch2 *src = 0;
 	tTJSVariant val;
-	long w, h;
-	long dx, dy, dl, dt, diw, dih, dpitch;
-	long sx, sy, siw, sih, spitch;
+	tjs_int32 w, h;
+	tjs_int32 dx, dy, dl, dt, diw, dih, dpitch;
+	tjs_int32 sx, sy, siw, sih, spitch;
 	unsigned char threshold = 1;
 	if (numparams < 7) return TJS_E_BADPARAMCOUNT;
 
-	dx  = (long)param[0]->AsInteger();
-	dy  = (long)param[1]->AsInteger();
+	dx  = (tjs_int32)param[0]->AsInteger();
+	dy  = (tjs_int32)param[1]->AsInteger();
 	src =       param[2]->AsObjectNoAddRef();
-	sx  = (long)param[3]->AsInteger();
-	sy  = (long)param[4]->AsInteger();
-	w   = (long)param[5]->AsInteger();
-	h   = (long)param[6]->AsInteger();
+	sx  = (tjs_int32)param[3]->AsInteger();
+	sy  = (tjs_int32)param[4]->AsInteger();
+	w   = (tjs_int32)param[5]->AsInteger();
+	h   = (tjs_int32)param[6]->AsInteger();
 	if (numparams >= 8 && param[7]->Type() != tvtVoid) {
-		long n = (long)param[7]->AsInteger();
+		tjs_int32 n = (tjs_int32)param[7]->AsInteger();
 		if (n >= 0 && n < 256) threshold = (unsigned char)(n);
 	}
 	if (w <= 0|| h <= 0) return TJS_E_INVALIDPARAM;
@@ -549,10 +549,10 @@ overwrapRect(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDi
 	// クリッピング
 	if (CalcClipArea(dx,dy,diw,dih, sx,sy,siw,sih, w,h)) return TJS_S_OK;
 
-	for (long y = 0; y < h; y++) {
+	for (tjs_int32 y = 0; y < h; y++) {
 		WrtRefT  p = dbuf + (y + dy) * dpitch + (dx*4);
 		ReadRefT q = sbuf + (y + sy) * spitch + (sx*4);
-		for (long x = 0; x < w; x++, p+=4, q+=4) {
+		for (tjs_int32 x = 0; x < w; x++, p+=4, q+=4) {
 			if (q[3] >= threshold) *(reinterpret_cast<PixelT*>(p)) = *(reinterpret_cast<const PixelT*>(q));
 		}
 	}
@@ -615,17 +615,17 @@ fillToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	iTJSDispatch2 *layerClass = getLayerClass();
 	
 	if (numparams < 2) return TJS_E_BADPARAMCOUNT;
-	long rcolor = ((int)*param[0]);
+	tjs_uint32 rcolor = ((tjs_uint32)(param[0])->AsInteger());
 	PixelT color = rcolor & 0xFFFFFF;
 	bool allmatch = rcolor < 0;
 	unsigned char index = (int)*param[1];
-	long threshold = 64;
+	tjs_int32 threshold = 64;
 	if (TJS_PARAM_EXIST(2)) {
-		threshold = (long)(param[2]->AsInteger());
+		threshold = (tjs_int32)(param[2]->AsInteger());
 	}
 
 	ReadRefT sbuf = 0;
-	long l, t, dw, dh, spitch;
+	tjs_int32 l, t, dw, dh, spitch;
 	if (!GetClipSize(lay, l, t, dw, dh, spitch)) {
 		TVPThrowExceptionMessage(TJS_W("src must be Layer."));
 	}
@@ -638,7 +638,7 @@ fillToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	sbuf += spitch * t + l * 4;
 
 	WrtRefT dbuf = 0;
-	long dpitch;
+	tjs_int32 dpitch;
 	val.Clear();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferForWrite"), &provinceImageBufferForWriteHint, &val, lay)) ||
 		(dbuf = reinterpret_cast<WrtRefT>(val.AsInteger())) == NULL) {
@@ -646,7 +646,7 @@ fillToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 	}
 	val.Clear();
 	if (TJS_FAILED(layerClass->PropGet(0, TJS_W("provinceImageBufferPitch"), &provinceImageBufferPitchHint, &val, lay)) ||
-		(dpitch = (long)val.AsInteger()) == 0) {
+		(dpitch = (tjs_int32)val.AsInteger()) == 0) {
 		TVPThrowExceptionMessage(TJS_W("dst has no province pitch."));
 	}
 	dbuf += dpitch * t + l;
@@ -656,7 +656,7 @@ fillToProvince(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJS
 		const PixelT *q = (const PixelT*)sbuf;
 		WrtRefT p = dbuf;
 		for (int x = 0; x < dw; x++) {
-			if ((allmatch || ((*q & 0xFFFFFF) == color)) && ((long)(*q >> 24)) >= threshold) {
+			if ((allmatch || ((*q & 0xFFFFFF) == color)) && ((tjs_int32)(*q >> 24)) >= threshold) {
 				*p = index;
 				if (minx < 0 || minx > x) minx = x;
 				if (miny < 0 || miny > y) miny = y;
