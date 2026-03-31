@@ -3,7 +3,7 @@
 using namespace std;
 
 #ifndef WIN32
-typedef unsigned char BYTE;
+typedef tjs_uint8 BYTE;
 typedef tjs_uint16 WORD;
 typedef tjs_uint32 DWORD;
 #endif
